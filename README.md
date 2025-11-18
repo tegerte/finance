@@ -71,10 +71,3 @@ Exit-Codes (Kurz):
 - Ein Zinssatz <= -1 ist ungültig (division durch null / negatives Diskontieren)
 - Falls kein eindeutiger IRR gefunden werden kann (z. B. mehrere Vorzeichenwechsel, keine Wurzel im gescannten Bereich), gibt das Tool einen Fehler zurück und empfiehlt die Prüfung der Cashflows oder eine andere Startschätzung.
 
-## Weiteres / Vorschläge
-- Tests mit pytest für bekannte Beispiele hinzufügen
-- Optional: Unterstützung für andere Datumsformate, CSV-Einleser oder unterschiedliche Day-count-Conventions (actual/365, actual/actual)
-- Optional: Ein kleines Packaging (setup.cfg/pyproject.toml) für einfache Installation
-
-## Lizenz
-Füge bitte eine passende Lizenzdatei (z. B. `LICENSE`) hinzu, falls du das Projekt mit einer Lizenz versehen möchtest.
