@@ -71,3 +71,4 @@ Exit-Codes (Kurz):
 - Ein Zinssatz <= -1 ist ungültig (division durch null / negatives Diskontieren)
 - Falls kein eindeutiger IRR gefunden werden kann (z. B. mehrere Vorzeichenwechsel, keine Wurzel im gescannten Bereich), gibt das Tool einen Fehler zurück und empfiehlt die Prüfung der Cashflows oder eine andere Startschätzung.
 
+## UI-Version coming soon...
