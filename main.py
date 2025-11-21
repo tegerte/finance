@@ -14,13 +14,24 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
+import humanfriendly
 
 from scipy.optimize import newton, brentq
 
 DateAmount = Tuple[datetime, float]
+
+def prRed(s): print("\033[91m {}\033[00m".format(s))
+
+def display_duration(cfs) ->str:
+    """
+    Calculates overall timespan 
+    """
+    _,_,span, end = _year_fractions(cfs)
+    formatted=f'Laufzeit bis heute {end.strftime("%A")} den {end.strftime("%d")}. {end.strftime("%B")} {end.strftime("%Y")} : \n{humanfriendly.format_timespan(span, detailed=True)}'
+    return formatted
 
 
 def load_cashflows(path: Path) -> List[DateAmount]:
@@ -76,18 +87,20 @@ def save_sample_json(path: Path) -> None:
     path.write_text(json.dumps(sample, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _year_fractions(cashflows: List[DateAmount], day_count: float = 365.25) -> Tuple[List[float], List[float]]:
+def _year_fractions(cashflows: List[DateAmount], day_count: float = 365.25) -> Tuple[List[float], List[float], timedelta, datetime]:
     """
     Wandelt Datum in Jahre seit dem Startdatum um und extrahiert Beträge.
 
     :param cashflows: Liste von (datetime, amount)
     :param day_count: Anzahl Tage pro Jahr (default 365.25 für Schaltjahre)
-    :return: (times_in_years, amounts)
+    :return: (times_in_years, amounts, runtime, enddate )
     """
     start = cashflows[0][0]
+    end = max([date for date,_ in cashflows])
+    runtime = end - start
     times = [(dt - start).days / day_count for dt, _ in cashflows]
     amounts = [amt for _, amt in cashflows]
-    return times, amounts
+    return times, amounts, runtime,end
 
 
 def xnpv(rate: float, times: List[float], amounts: List[float]) -> float:
@@ -131,7 +144,7 @@ def xirr(
 
     :return: Jahreszins als Dezimal oder None, wenn kein eindeutiger IRR gefunden wurde.
     """
-    times, amounts = _year_fractions(cashflows, day_count=day_count)
+    times, amounts, _, _ = _year_fractions(cashflows, day_count=day_count)
 
     if not any(a > 0 for a in amounts) or not any(a < 0 for a in amounts):
         # Kein gültiger IRR möglich ohne mindestens ein Vorzeichenwechsel
@@ -218,6 +231,7 @@ def main() -> int:
 
     try:
         cashflows = load_cashflows(path)
+        print(display_duration(cashflows))
     except ValueError as exc:
         print(f"Fehler beim Einlesen der Cashflows: {exc}")
         return 3
@@ -227,8 +241,9 @@ def main() -> int:
         print("Die Rendite konnte nicht berechnet werden. Prüfen Sie die Cashflows (müssen mindestens eine positive und eine negative Zahlung enthalten) "
               "oder versuchen Sie eine andere Start-Schätzung (--guess).")
         return 4
-
-    print(f"Die berechnete Rendite (IRR) beträgt: {irr * 100:.6f}% pro Jahr")
+    resultstring = f'{irr * 100:.6f}% pro Jahr'
+    print(f"Die berechnete Rendite (IRR) beträgt:  ")
+    prRed(resultstring)
     return 0
 
 
