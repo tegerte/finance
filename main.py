@@ -242,7 +242,7 @@ def main() -> int:
               "oder versuchen Sie eine andere Start-Schätzung (--guess).")
         return 4
     resultstring = f'{irr * 100:.6f}% pro Jahr'
-    print(f"Die berechnete Rendite (IRR) beträgt:  ")
+    print(f"\nDie berechnete Rendite (IRR) beträgt:  ")
     prRed(resultstring)
     return 0
 
