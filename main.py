@@ -1,86 +1,236 @@
+#!/usr/bin/env python3
+"""
+CLI for computing XIRR (interner Zinsfuß) aus einer JSON-Datei mit Cashflows.
+
+Usage examples:
+  - Erstelle eine Beispiel-JSON:
+      python main.py --init sample_cashflows.json
+  - Berechne die Rendite aus einer Datei (default: cashflows.json):
+      python main.py --file sample_cashflows.json
+  - Mit Start-Schätzung:
+      python main.py --file sample_cashflows.json --guess 0.05
+"""
+from __future__ import annotations
+
+import argparse
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import List, Tuple, Optional
-from scipy.optimize import newton
 
-# Eingabedaten: Datum und Betrag (Einzahlungen negativ, Auszahlungen positiv)
-CASHFLOWS = [
-    (datetime(2025, 3, 23), -16000),  # Start Einzahlung
-    (datetime(2025, 6, 1), 12000),  # Abhebung
-    (datetime(2025, 8, 11), -700),  # Einzahlung
-    (datetime(2025, 11, 18), 4921),  # aktueller Wert inkl. Zinsen
-]
-# Hilfs-Module-Variablen, werden zur Laufzeit in __main__ befüllt.
-times: List[float] = []
-amounts: List[float] = []
+from scipy.optimize import newton, brentq
 
-def npv(rate: float) ->float:
+DateAmount = Tuple[datetime, float]
+
+
+def load_cashflows(path: Path) -> List[DateAmount]:
     """
-    Net Present Value (NPV) für unregelmäßige Cashflows.
+    Lade Cashflows aus einer JSON-Datei.
 
-    Diese Funktion diskontiert die globalen Listen `amounts` mit den
-    Zeitpunkten `times` (Jahre seit Startdatum) auf den Startzeitpunkt
-    und gibt die Summe zurück.
+    Erwartetes JSON-Format: eine Liste von Objekten mit Feldern:
+      - date: "YYYY-MM-DD" (oder ISO 8601 Datumsteil)
+      - amount: Zahl (Einzahlungen negativ, Auszahlungen positiv)
 
-    :param rate: Jahreszinssatz in Dezimalform (z. B. 0.05 für 5%)
-                 Muss größer als -1 sein (da (1 + rate) im Nenner steht).
-    :raises ValueError: wenn rate <= -1 (diskontierungsbasis ungültig)
-    :return: Kapitalwert (float)
+    :param path: Pfad zur JSON-Datei
+    :return: Liste von (datetime, amount)
+    :raises ValueError: falls Einträge ungültig sind
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("JSON muss eine Liste von Cashflow-Objekten enthalten.")
+    cf: List[DateAmount] = []
+    for i, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise ValueError(f"Eintrag #{i} ist kein Objekt.")
+        if "date" not in item or "amount" not in item:
+            raise ValueError(f"Eintrag #{i} fehlt 'date' oder 'amount'.")
+        date_raw = item["date"]
+        amt = item["amount"]
+        if not isinstance(date_raw, str):
+            raise ValueError(f"Datum in Eintrag #{i} muss ein String sein.")
+        try:
+            # Unterstütze "YYYY-MM-DD" und generelle ISO-Formate (time wird ignoriert)
+            dt = datetime.fromisoformat(date_raw)
+        except Exception as exc:
+            raise ValueError(f"Datum in Eintrag #{i} ist ungültig: {exc}")
+        try:
+            amount = float(amt)
+        except Exception:
+            raise ValueError(f"Betrag in Eintrag #{i} ist keine gültige Zahl.")
+        cf.append((dt, amount))
+    if not cf:
+        raise ValueError("Keine Cashflows in der Datei.")
+    return cf
+
+
+def save_sample_json(path: Path) -> None:
+    """
+    Schreibe eine Beispiel-Cashflow-JSON-Datei zum einfachen Starten.
+    """
+    sample = [
+        {"date": "2025-03-23", "amount": -16000},  # Start Einzahlung
+        {"date": "2025-06-01", "amount": 12000},   # Abhebung
+        {"date": "2025-08-11", "amount": -700},    # Einzahlung
+        {"date": "2025-11-18", "amount": 4921},    # aktueller Wert inkl. Zinsen
+    ]
+    path.write_text(json.dumps(sample, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _year_fractions(cashflows: List[DateAmount], day_count: float = 365.25) -> Tuple[List[float], List[float]]:
+    """
+    Wandelt Datum in Jahre seit dem Startdatum um und extrahiert Beträge.
+
+    :param cashflows: Liste von (datetime, amount)
+    :param day_count: Anzahl Tage pro Jahr (default 365.25 für Schaltjahre)
+    :return: (times_in_years, amounts)
+    """
+    start = cashflows[0][0]
+    times = [(dt - start).days / day_count for dt, _ in cashflows]
+    amounts = [amt for _, amt in cashflows]
+    return times, amounts
+
+
+def xnpv(rate: float, times: List[float], amounts: List[float]) -> float:
+    """
+    XNPV für unregelmäßige Cashflows bei gegebenem Jahreszinssatz.
+
+    :param rate: Jahreszins (dezimal). Muss > -1.
+    :param times: Zeitpunkte in Jahren relativ zum ersten Cashflow.
+    :param amounts: Beträge.
+    :return: Kapitalwert
     """
     if rate <= -1.0:
         raise ValueError("rate must be greater than -1.0")
-    return sum(amounts[i] / (1 + rate) ** times[i] for i in range(len(times)))
+    return sum(a / ((1.0 + rate) ** t) for t, a in zip(times, amounts))
 
 
-# Berechnung des internen Zinsfußes mittels Newton-Verfahren
-def xirr(guess: float = 0.05) -> Optional[float]:
+def _dxnpv_dr(rate: float, times: List[float], amounts: List[float]) -> float:
     """
-    Berechnet den internen Zinsfuß (IRR/XIRR) mittels Newton-Verfahren.
-
-    Es wird das Newton-Raphson-Verfahren (scipy.optimize.newton) auf die
-    Funktion `npv` angewandt. Falls das Verfahren nicht konvergiert oder
-    numerische Fehler auftreten, wird None zurückgegeben.
-
-    :param guess: Startwert für das Newton-Verfahren (standard 0.05)
-    :return: gefundener Jahreszins als Dezimal (z. B. 0.05) oder None bei Fehlern
+    Ableitung von xnpv nach dem Zinssatz (für Newton).
     """
+    if rate <= -1.0:
+        raise ValueError("rate must be greater than -1.0")
+    return sum(-t * a / ((1.0 + rate) ** (t + 1.0)) for t, a in zip(times, amounts))
+
+
+def xirr(
+    cashflows: List[DateAmount],
+    guess: float = 0.05,
+    tol: float = 1e-9,
+    maxiter: int = 100,
+    day_count: float = 365.25,
+) -> Optional[float]:
+    """
+    Berechne den internen Zinsfuß (XIRR) für unregelmäßige Cashflows.
+
+    Vorgehen:
+      1. Validierung (mind. ein positiver und ein negativer Cashflow).
+      2. Versuch mit Newton-Raphson (analytische Ableitung).
+      3. Falls Newton fehlschlägt, Suche nach einem Intervall mit Vorzeichenwechsel
+         und löse mit brentq (robuster).
+
+    :return: Jahreszins als Dezimal oder None, wenn kein eindeutiger IRR gefunden wurde.
+    """
+    times, amounts = _year_fractions(cashflows, day_count=day_count)
+
+    if not any(a > 0 for a in amounts) or not any(a < 0 for a in amounts):
+        # Kein gültiger IRR möglich ohne mindestens ein Vorzeichenwechsel
+        return None
+
+    def f(r: float) -> float:
+        return xnpv(r, times, amounts)
+
+    def df(r: float) -> float:
+        return _dxnpv_dr(r, times, amounts)
+
+    # 1) Newton-Raphson mit analytischer Ableitung
     try:
-        irr = newton(npv, guess)
-        return irr
+        irr = newton(func=f, x0=guess, fprime=df, tol=tol, maxiter=maxiter)
+        if irr > -1.0:
+            return float(irr)
     except (RuntimeError, OverflowError, ValueError):
-        # RuntimeError: keine Konvergenz
-        # OverflowError: numerische Überläufe
-        # ValueError: z. B. invalid operations innerhalb npv (rate <= -1)
+        # Fallthrough to bracketed root finder
+        pass
+
+    # 2) Bracket + brentq: suche einen Bereich mit Vorzeichenwechsel
+    scan_min = -0.999999
+    scan_max = 10.0
+    n_steps = 200
+    step = (scan_max - scan_min) / n_steps
+    prev_r = scan_min
+    try:
+        prev_f = f(prev_r)
+    except Exception:
+        prev_f = float("inf")
+    r = prev_r + step
+    bracket: Optional[Tuple[float, float]] = None
+    for _ in range(n_steps):
+        try:
+            curr_f = f(r)
+        except Exception:
+            curr_f = float("inf")
+        if prev_f == 0.0:
+            bracket = (prev_r, prev_r)
+            break
+        if curr_f == 0.0:
+            bracket = (r, r)
+            break
+        if prev_f * curr_f < 0.0:
+            bracket = (prev_r, r)
+            break
+        prev_r, prev_f = r, curr_f
+        r += step
+
+    if bracket is None:
+        return None
+
+    low, high = bracket
+    if low == high:
+        return low
+    try:
+        irr = brentq(f, low, high, xtol=tol)
+        return float(irr)
+    except Exception:
         return None
 
 
-if __name__ == '__main__':
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Berechne XIRR aus einer JSON-Datei mit Cashflows.")
+    parser.add_argument("--file", "-f", type=Path, default=Path("cashflows.json"),
+                        help="Pfad zur JSON-Datei mit Cashflows (default: cashflows.json)")
+    parser.add_argument("--init", action="store_true", help="Erstelle eine Beispiel-JSON-Datei und beende das Programm.")
+    parser.add_argument("--guess", type=float, default=0.05, help="Start-Schätzung für das Newton-Verfahren (default: 0.05)")
+    args = parser.parse_args()
 
-    if __name__ == "__main__":
-        # Validierung und Umwandlung: Zeiten in Jahre seit Start und Beträge extrahieren
-        if not CASHFLOWS:
-            print("Keine Cashflows vorhanden. Fügen Sie mindestens einen Cashflow hinzu.")
-            raise SystemExit(1)
+    path = args.file
 
-        start_date = CASHFLOWS[0][0]
-        # Zeiten in Jahren relativ zum Startdatum (365.25 Tage/Jahr zur Schaltjahrsberücksichtigung)
-        times = [(cf[0] - start_date).days / 365.25 for cf in CASHFLOWS]
-        amounts = [cf[1] for cf in CASHFLOWS]
+    if args.init:
+        if path.exists():
+            print(f"Datei {path!s} existiert bereits. Überschreibe nicht.")
+            return 1
+        save_sample_json(path)
+        print(f"Beispiel-Cashflows geschrieben nach: {path!s}")
+        return 0
 
-        # Einfache Plausibilitätsprüfung: es muss mindestens eine positive und eine negative Zahlung geben
-        if not any(a > 0 for a in amounts) or not any(a < 0 for a in amounts):
-            print(
-                "Die Rendite kann nicht berechnet werden: "
-                "Die Cashflows müssen mindestens eine Einzahlung (negativ) und eine Auszahlung (positiv) enthalten."
-            )
-            raise SystemExit(1)
+    if not path.exists():
+        print(f"Datei {path!s} nicht gefunden. Erzeuge eine Beispiel-Datei mit --init {path!s}")
+        return 2
 
-        # Berechnung des IRR
-        result = xirr()
-        if result is not None:
-            print(f"Die berechnete Rendite (IRR) beträgt: {result * 100:.3f}% pro Jahr")
-        else:
-            print(
-                "Die Rendite konnte nicht berechnet werden. "
-                "Mögliche Ursachen: das Newton-Verfahren konvergiert nicht mit der aktuellen Schätzung, "
-                "numerische Probleme (z. B. rate <= -1), oder die Cashflows erzeugen keinen eindeutigen IRR."
-            )
+    try:
+        cashflows = load_cashflows(path)
+    except ValueError as exc:
+        print(f"Fehler beim Einlesen der Cashflows: {exc}")
+        return 3
+
+    irr = xirr(cashflows, guess=args.guess)
+    if irr is None:
+        print("Die Rendite konnte nicht berechnet werden. Prüfen Sie die Cashflows (müssen mindestens eine positive und eine negative Zahlung enthalten) "
+              "oder versuchen Sie eine andere Start-Schätzung (--guess).")
+        return 4
+
+    print(f"Die berechnete Rendite (IRR) beträgt: {irr * 100:.6f}% pro Jahr")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
