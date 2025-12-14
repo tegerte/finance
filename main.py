@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
 import humanfriendly
+import pandas as pd
 
 from scipy.optimize import newton, brentq
 
@@ -206,35 +207,74 @@ def xirr(
     except Exception:
         return None
 
+def read_json(filename ) ->[dict,boolean]:
+    """
+    liest das json und holt den neuesten Eintrag, der dem heutigen Datum entsprechen muss.
+    Ist leider in gewisser Weise doppelt zu read_cashflows... egal
+    """
+    try:
+        with open(filename,'r') as json_file:
+            data = json.load(json_file)
+            max_entry = max(data,key=lambda x: x['date']) # returns the dict from the list with max date
+            if max_entry['date'] != datetime.today().strftime('%Y-%m-%d'):
+                print(f'Ist aktueller Eintrag vorhanden?. Neuester Eintrag ist {max_entry["date"]}.')
+                return (max_entry, False)
+
+            return max_entry,True
+    except FileNotFoundError:
+        print(f'File {filename} konnte nicht gefunden werden!')
+        return None, False
+
+def read_csv(in_file: Path) -> pd.DataFrame:
+    try:
+        df = pd.read_csv(in_file)
+    except FileNotFoundError:
+        df = pd.DataFrame()
+    return df
+
+def write_csv(out_file:Path, df: DataFrame) ->int:
+    pass
+
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Berechne XIRR aus einer JSON-Datei mit Cashflows.")
-    parser.add_argument("--file", "-f", type=Path, default=Path("cashflows.json"),
+    parser.add_argument("--cashflows", "-c", type=Path, default=Path("cashflows.json"),
                         help="Pfad zur JSON-Datei mit Cashflows (default: cashflows.json)")
+    parser.add_argument("--rendite", "-r", type=Path, default=Path("rendite.csv"),
+                        help="Pfad zur CSV-Datei mit den bisherigen Rendite-ergebnissen (default: rendite.csv)")
+
     parser.add_argument("--init", action="store_true", help="Erstelle eine Beispiel-JSON-Datei und beende das Programm.")
     parser.add_argument("--guess", type=float, default=0.05, help="Start-Schätzung für das Newton-Verfahren (default: 0.05)")
     args = parser.parse_args()
 
-    path = args.file
+    path_cfs = args.cashflows
+    path_rendite = args.rendite
 
     if args.init:
-        if path.exists():
-            print(f"Datei {path!s} existiert bereits. Überschreibe nicht.")
+        if path_cfs.exists():
+            print(f"Datei {path_cfs!s} existiert bereits. Überschreibe nicht.")
             return 1
-        save_sample_json(path)
-        print(f"Beispiel-Cashflows geschrieben nach: {path!s}")
+        save_sample_json(path_cfs)
+        print(f"Beispiel-Cashflows geschrieben nach: {path_cfs!s}")
         return 0
 
-    if not path.exists():
-        print(f"Datei {path!s} nicht gefunden. Erzeuge eine Beispiel-Datei mit --init {path!s}")
+    if not path_cfs.exists():
+        print(f"Datei {path_cfs!s} nicht gefunden. Erzeuge eine Beispiel-Datei mit --init {path_cfs!s}")
         return 2
 
+    previous_results = read_csv(path_rendite)
+    current_data, new_data = read_json(path_cfs)
+
     try:
-        cashflows = load_cashflows(path)
+
+        cashflows = load_cashflows(path_cfs)
         print(display_duration(cashflows))
     except ValueError as exc:
         print(f"Fehler beim Einlesen der Cashflows: {exc}")
         return 3
+
+
 
     irr = xirr(cashflows, guess=args.guess)
     if irr is None:
@@ -244,6 +284,10 @@ def main() -> int:
     resultstring = f'{irr * 100:.6f}% pro Jahr'
     print(f"\nDie berechnete Rendite (IRR) beträgt:  ")
     prRed(resultstring)
+    if new_data :
+        new_row = pd.DataFrame()
+        results = pd.concat([previous_results, new_row], ignore_index=True)
+        write_csv(path_rendite, results)
     return 0
 
 
