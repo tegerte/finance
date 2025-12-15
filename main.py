@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import humanfriendly
 import pandas as pd
-
+from cryptography.fernet import Fernet
 from scipy.optimize import newton, brentq
 
 DateAmount = Tuple[datetime, float]
@@ -235,6 +235,35 @@ def read_csv(in_file: Path) -> pd.DataFrame:
 def write_csv(out_file:Path, df: DataFrame) ->int:
     pass
 
+def do_the_key_stuff():
+    key_file = Path('file.key')
+    if not key_file.exists():
+
+        key = Fernet.generate_key()
+        with open('file.key', 'wb') as f:
+            f.write(key)
+        print (f'Neuen key {key} erzeugt und in file {key_file} abgelegt')
+        return key
+    else:
+        with open('file.key', 'rb') as f:
+            key = f.read()
+        return key
+
+def encrypt_file(file: Path,key) -> None:
+    fernet = Fernet(key)
+    with open(file, 'rb') as uf:
+        unencr = uf.read()
+    encr = fernet.encrypt(unencr)
+    with open(file, 'wb') as ef:
+        ef.write(encr)
+
+def decrypt_file(file: Path,key) -> None:
+    fernet = Fernet(key)
+    with open(file, 'rb') as ef:
+        encr = ef.read()
+    decr = fernet.decrypt(encr)
+    with open(file, 'wb') as uf:
+        unencr = uf.write(decr)
 
 
 def main() -> int:
@@ -263,6 +292,9 @@ def main() -> int:
         print(f"Datei {path_cfs!s} nicht gefunden. Erzeuge eine Beispiel-Datei mit --init {path_cfs!s}")
         return 2
 
+    key = do_the_key_stuff()
+    #encrypt_file(path_rendite, key)
+    decrypt_file(path_rendite, key)
     previous_results = read_csv(path_rendite)
     current_data, new_data = read_json(path_cfs)
 
@@ -288,6 +320,7 @@ def main() -> int:
         new_row = pd.DataFrame()
         results = pd.concat([previous_results, new_row], ignore_index=True)
         write_csv(path_rendite, results)
+        encrypt_file(path_rendite, key)
     return 0
 
 
