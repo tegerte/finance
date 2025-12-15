@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import humanfriendly
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from scipy.optimize import newton, brentq
 
@@ -233,7 +234,8 @@ def read_csv(in_file: Path) -> pd.DataFrame:
     return df
 
 def write_csv(out_file:Path, df: DataFrame) ->int:
-    pass
+    df.to_csv(out_file, index=False)
+
 
 
 
@@ -285,9 +287,11 @@ def main() -> int:
     print(f"\nDie berechnete Rendite (IRR) beträgt:  ")
     prRed(resultstring)
     if new_data :
-        new_row = pd.DataFrame()
+        new_row = pd.DataFrame({'date': [current_data['date']],'saldo': [current_data['amount']],'rendite': [irr * 100]})
         results = pd.concat([previous_results, new_row], ignore_index=True)
         write_csv(path_rendite, results)
+    results.plot(x='date', y='rendite', kind='line')
+    plt.show()
     return 0
 
 
