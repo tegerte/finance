@@ -289,6 +289,7 @@ def main() -> int:
     if new_data :
         new_row = pd.DataFrame({'date': [current_data['date']],'saldo': [current_data['amount']],'rendite': [irr * 100]})
         results = pd.concat([previous_results, new_row], ignore_index=True)
+        # noch prüfen ob für den heutigen Tag ein Eintarag vorhanden ist
         write_csv(path_rendite, results)
     results.plot(x='date', y='rendite', kind='line')
     plt.show()
