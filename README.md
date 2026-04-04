@@ -104,9 +104,15 @@ Ein Playwright-basiertes Skript, das sich automatisch bei Allvest einloggt, den 
 .venv-browseruse/bin/python fetch_allvest.py --debug --mail
 ```
 
-### Authentifizierung
+### Authentifizierung & Troubleshooting
 
 Das Skript nutzt ein **persistentes Browser-Profil** (`.browser-profile/`), um Cookies und Sessions zu speichern. Beim ersten Lauf oder nach Session-Ablauf verlangt Allvest eine 2FA-Verifizierung per E-Mail-Code. In dem Fall mit `--debug` starten, den Code im Browser-Fenster eingeben — danach läuft es wieder automatisch.
+
+Falls die Session abgelaufen ist:
+```bash
+.venv-browseruse/bin/python fetch_allvest.py --debug --mail
+```
+Den E-Mail-Code im sich öffnenden Browser eingeben, danach läuft alles wieder automatisch.
 
 ### Automatischer täglicher Lauf
 
