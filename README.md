@@ -71,4 +71,65 @@ Exit-Codes (Kurz):
 - Ein Zinssatz <= -1 ist ungültig (division durch null / negatives Diskontieren)
 - Falls kein eindeutiger IRR gefunden werden kann (z. B. mehrere Vorzeichenwechsel, keine Wurzel im gescannten Bereich), gibt das Tool einen Fehler zurück und empfiehlt die Prüfung der Cashflows oder eine andere Startschätzung.
 
-## UI-Version coming soon...
+## Automatischer Kurswert-Abruf (fetch_allvest.py)
+
+Ein Playwright-basiertes Skript, das sich automatisch bei Allvest einloggt, den aktuellen Kurswert ausliest, die `cashflows.json` aktualisiert, die Rendite berechnet und optional eine HTML-Mail mit Plot versendet.
+
+### Voraussetzungen
+
+- Python 3.12 (separates venv `.venv-browseruse`)
+- Playwright mit Chromium
+- `.env`-Datei mit Zugangsdaten (siehe `.env.example`)
+
+### Setup
+
+```bash
+# Venv und Abhängigkeiten sind bereits eingerichtet:
+.venv-browseruse/bin/python -m playwright install chromium
+```
+
+### Verwendung
+
+```bash
+# Nur Kurswert anzeigen (nichts speichern):
+.venv-browseruse/bin/python fetch_allvest.py --dry-run
+
+# Kurswert holen + Rendite berechnen:
+.venv-browseruse/bin/python fetch_allvest.py
+
+# Mit E-Mail-Versand:
+.venv-browseruse/bin/python fetch_allvest.py --mail
+
+# Debug-Modus (Browser sichtbar, Screenshots):
+.venv-browseruse/bin/python fetch_allvest.py --debug --mail
+```
+
+### Authentifizierung
+
+Das Skript nutzt ein **persistentes Browser-Profil** (`.browser-profile/`), um Cookies und Sessions zu speichern. Beim ersten Lauf oder nach Session-Ablauf verlangt Allvest eine 2FA-Verifizierung per E-Mail-Code. In dem Fall mit `--debug` starten, den Code im Browser-Fenster eingeben — danach läuft es wieder automatisch.
+
+### Automatischer täglicher Lauf
+
+Ein launchd-Agent (`~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist`) startet das Skript beim Login. Das Wrapper-Skript `fetch_daily.sh` stellt sicher, dass es pro Tag nur einmal läuft.
+
+```bash
+# Agent manuell laden/entladen:
+launchctl load ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
+launchctl unload ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
+```
+
+### Projektstruktur
+
+```
+main.py                 # XIRR-Berechnung + Plot
+fetch_allvest.py        # Automatischer Kurswert-Abruf + Mail
+fetch_daily.sh          # Wrapper für täglichen Lauf (einmal pro Tag)
+cashflows.json          # Cashflow-Daten (Ein-/Auszahlungen + aktueller Wert)
+rendite.csv             # Historische Rendite-Ergebnisse
+rendite_plot.png        # Letzter gespeicherter Plot
+.env                    # Zugangsdaten (nicht committen!)
+.env.example            # Vorlage für .env
+.browser-profile/       # Persistentes Chromium-Profil (nicht committen!)
+.venv/                  # Python 3.9 venv für main.py
+.venv-browseruse/       # Python 3.12 venv für fetch_allvest.py
+```

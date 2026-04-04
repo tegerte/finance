@@ -1,0 +1,11 @@
+.env
+.venv/
+.venv-browseruse/
+.browser-profile/
+screenshots/
+rendite_plot.png
+fetch.log
+launchd.log
+__pycache__/
+*.pyc
+.DS_Store

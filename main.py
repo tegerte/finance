@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 import humanfriendly
 import pandas as pd
 import matplotlib.pyplot as plt
+from pandas import DataFrame
+import numpy as np
 
 from scipy.optimize import newton, brentq
 
@@ -208,7 +210,7 @@ def xirr(
     except Exception:
         return None
 
-def read_json(filename ) ->[dict,boolean]:
+def read_json(filename, supress_new_prompt=False) -> tuple[Any, Any, bool] | tuple[None, None, bool]:
     """
     liest das json und holt den neuesten Eintrag, der dem heutigen Datum entsprechen muss.
     Ist leider in gewisser Weise doppelt zu read_cashflows... egal
@@ -217,14 +219,14 @@ def read_json(filename ) ->[dict,boolean]:
         with open(filename,'r') as json_file:
             data = json.load(json_file)
             max_entry = max(data,key=lambda x: x['date']) # returns the dict from the list with max date
-            if max_entry['date'] != datetime.today().strftime('%Y-%m-%d'):
+            if max_entry['date'] != datetime.today().strftime('%Y-%m-%d') and not supress_new_prompt:
                 print(f'Ist aktueller Eintrag vorhanden?. Neuester Eintrag ist {max_entry["date"]}.')
-                return (max_entry, False)
+                return data,max_entry, False
 
-            return max_entry,True
+            return data,max_entry,True
     except FileNotFoundError:
         print(f'File {filename} konnte nicht gefunden werden!')
-        return None, False
+        return None, None, False
 
 def read_csv(in_file: Path) -> pd.DataFrame:
     try:
@@ -247,7 +249,13 @@ def main() -> int:
                         help="Pfad zur CSV-Datei mit den bisherigen Rendite-ergebnissen (default: rendite.csv)")
 
     parser.add_argument("--init", action="store_true", help="Erstelle eine Beispiel-JSON-Datei und beende das Programm.")
-    parser.add_argument("--guess", type=float, default=0.05, help="Start-Schätzung für das Newton-Verfahren (default: 0.05)")
+    parser.add_argument("--guess", type=float, default=0.05,
+                        help="Start-Schätzung für das Newton-Verfahren (default: 0.05)")
+    parser.add_argument("--standalone","-s", action="store_true",
+                        help="Schaltet Abfrage des aktuellen Kontostands über Komandozeile ein. ")
+    parser.add_argument("--save-plot", type=Path, default=None,
+                        help="Plot als Bild speichern statt anzeigen (z.B. --save-plot rendite.png)")
+
     args = parser.parse_args()
 
     path_cfs = args.cashflows
@@ -266,7 +274,19 @@ def main() -> int:
         return 2
 
     previous_results = read_csv(path_rendite)
-    current_data, new_data = read_json(path_cfs)
+    if args.standalone:
+        curr_saldo= input('Aktueller Kontostand?')
+        data,_,_ = read_json(path_cfs, supress_new_prompt=True)
+        new_data =True
+        current_data = {'amount': curr_saldo, 'date': str(date.today())}
+        data and data[-1].update(current_data)
+        with open(path_cfs, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+
+    else:
+       _, current_data, new_data = read_json(path_cfs)
 
     try:
 
@@ -291,10 +311,30 @@ def main() -> int:
         results = pd.concat([previous_results, new_row], ignore_index=True)
         # noch prüfen ob für den heutigen Tag ein Eintarag vorhanden ist
         write_csv(path_rendite, results)
-    results.plot(x='date', y='rendite', kind='line')
-    plt.show()
+    else:
+        results = previous_results
+    plot_it(results, save_path=args.save_plot)
     return 0
 
+
+def plot_it(results: DataFrame, save_path: Path | None = None):
+    ax = results.plot(x='date', y='rendite', kind='line')  # Achse speichern[web:2]
+
+    # Trendlinie berechnen (numerische x-Werte für Regression)
+    x_num = np.arange(len(results))
+    y_num = results['rendite'].values
+    z = np.polyfit(x_num, y_num, 1)  # Steigung und Achsenabschnitt[web:5][web:12]
+    p = np.poly1d(z)
+
+    # Linie plotten (gleiche Länge wie x)
+    ax.plot(results['date'], p(x_num), color="red", linestyle="dotted", linewidth=1, label="Trend")
+
+    ax.legend()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Plot gespeichert: {save_path}")
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     raise SystemExit(main())
