@@ -77,7 +77,7 @@ Ein Playwright-basiertes Skript, das sich automatisch bei Allvest einloggt, den 
 
 ### Voraussetzungen
 
-- Python 3.12 (separates venv `.venv-browseruse`)
+- Python 3.12 (venv `.venv`)
 - Playwright mit Chromium
 - `.env`-Datei mit Zugangsdaten (siehe `.env.example`)
 
@@ -85,23 +85,23 @@ Ein Playwright-basiertes Skript, das sich automatisch bei Allvest einloggt, den 
 
 ```bash
 # Venv und Abhängigkeiten sind bereits eingerichtet:
-.venv-browseruse/bin/python -m playwright install chromium
+.venv/bin/python -m playwright install chromium
 ```
 
 ### Verwendung
 
 ```bash
 # Nur Kurswert anzeigen (nichts speichern):
-.venv-browseruse/bin/python fetch_allvest.py --dry-run
+.venv/bin/python fetch_allvest.py --dry-run
 
 # Kurswert holen + Rendite berechnen:
-.venv-browseruse/bin/python fetch_allvest.py
+.venv/bin/python fetch_allvest.py
 
 # Mit E-Mail-Versand:
-.venv-browseruse/bin/python fetch_allvest.py --mail
+.venv/bin/python fetch_allvest.py --mail
 
 # Debug-Modus (Browser sichtbar, Screenshots):
-.venv-browseruse/bin/python fetch_allvest.py --debug --mail
+.venv/bin/python fetch_allvest.py --debug --mail
 ```
 
 ### Authentifizierung & Troubleshooting
@@ -110,7 +110,7 @@ Das Skript nutzt ein **persistentes Browser-Profil** (`.browser-profile/`), um C
 
 Falls die Session abgelaufen ist:
 ```bash
-.venv-browseruse/bin/python fetch_allvest.py --debug --mail
+.venv/bin/python fetch_allvest.py --debug --mail
 ```
 Den E-Mail-Code im sich öffnenden Browser eingeben, danach läuft alles wieder automatisch.
 
@@ -178,6 +178,5 @@ rendite_plot.png        # Letzter gespeicherter Plot
 .env                    # Zugangsdaten (nicht committen!)
 .env.example            # Vorlage für .env
 .browser-profile/       # Persistentes Chromium-Profil (nicht committen!)
-.venv/                  # Python 3.9 venv für main.py
-.venv-browseruse/       # Python 3.12 venv für fetch_allvest.py
+.venv/                  # Python 3.12 venv (alle Abhängigkeiten)
 ```

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import List, Tuple, Optional, Any
@@ -25,9 +26,11 @@ import numpy as np
 
 from scipy.optimize import newton, brentq
 
+log = logging.getLogger(__name__)
+
 DateAmount = Tuple[datetime, float]
 
-def prRed(s): print("\033[91m {}\033[00m".format(s))
+def prRed(s): log.info("\033[91m %s\033[00m", s)
 
 def display_duration(cfs) ->str:
     """
@@ -220,12 +223,12 @@ def read_json(filename, supress_new_prompt=False) -> tuple[Any, Any, bool] | tup
             data = json.load(json_file)
             max_entry = max(data,key=lambda x: x['date']) # returns the dict from the list with max date
             if max_entry['date'] != datetime.today().strftime('%Y-%m-%d') and not supress_new_prompt:
-                print(f'Ist aktueller Eintrag vorhanden?. Neuester Eintrag ist {max_entry["date"]}.')
+                log.warning('Ist aktueller Eintrag vorhanden? Neuester Eintrag ist %s.', max_entry["date"])
                 return data,max_entry, False
 
             return data,max_entry,True
     except FileNotFoundError:
-        print(f'File {filename} konnte nicht gefunden werden!')
+        log.error('File %s konnte nicht gefunden werden!', filename)
         return None, None, False
 
 def read_csv(in_file: Path) -> pd.DataFrame:
@@ -263,14 +266,14 @@ def main() -> int:
 
     if args.init:
         if path_cfs.exists():
-            print(f"Datei {path_cfs!s} existiert bereits. Überschreibe nicht.")
+            log.warning("Datei %s existiert bereits. Überschreibe nicht.", path_cfs)
             return 1
         save_sample_json(path_cfs)
-        print(f"Beispiel-Cashflows geschrieben nach: {path_cfs!s}")
+        log.info("Beispiel-Cashflows geschrieben nach: %s", path_cfs)
         return 0
 
     if not path_cfs.exists():
-        print(f"Datei {path_cfs!s} nicht gefunden. Erzeuge eine Beispiel-Datei mit --init {path_cfs!s}")
+        log.error("Datei %s nicht gefunden. Erzeuge eine Beispiel-Datei mit --init %s", path_cfs, path_cfs)
         return 2
 
     previous_results = read_csv(path_rendite)
@@ -291,20 +294,20 @@ def main() -> int:
     try:
 
         cashflows = load_cashflows(path_cfs)
-        print(display_duration(cashflows))
+        log.info(display_duration(cashflows))
     except ValueError as exc:
-        print(f"Fehler beim Einlesen der Cashflows: {exc}")
+        log.error("Fehler beim Einlesen der Cashflows: %s", exc)
         return 3
 
 
 
     irr = xirr(cashflows, guess=args.guess)
     if irr is None:
-        print("Die Rendite konnte nicht berechnet werden. Prüfen Sie die Cashflows (müssen mindestens eine positive und eine negative Zahlung enthalten) "
+        log.error("Die Rendite konnte nicht berechnet werden. Prüfen Sie die Cashflows (müssen mindestens eine positive und eine negative Zahlung enthalten) "
               "oder versuchen Sie eine andere Start-Schätzung (--guess).")
         return 4
     resultstring = f'{irr * 100:.6f}% pro Jahr'
-    print(f"\nDie berechnete Rendite (IRR) beträgt:  ")
+    log.info("Die berechnete Rendite (IRR) beträgt:")
     prRed(resultstring)
     if new_data :
         new_row = pd.DataFrame({'date': [current_data['date']],'saldo': [current_data['amount']],'rendite': [irr * 100]})
@@ -318,23 +321,85 @@ def main() -> int:
 
 
 def plot_it(results: DataFrame, save_path: Path | None = None):
-    ax = results.plot(x='date', y='rendite', kind='line')  # Achse speichern[web:2]
+    import matplotlib.dates as mdates
+    from matplotlib.dates import DateFormatter
 
-    # Trendlinie berechnen (numerische x-Werte für Regression)
-    x_num = np.arange(len(results))
-    y_num = results['rendite'].values
-    z = np.polyfit(x_num, y_num, 1)  # Steigung und Achsenabschnitt[web:5][web:12]
-    p = np.poly1d(z)
+    df = results.copy()
+    df["date"] = pd.to_datetime(df["date"])
 
-    # Linie plotten (gleiche Länge wie x)
-    ax.plot(results['date'], p(x_num), color="red", linestyle="dotted", linewidth=1, label="Trend")
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True,
+                                    gridspec_kw={"height_ratios": [3, 2], "hspace": 0.08})
+    fig.patch.set_facecolor("#fafafa")
 
-    ax.legend()
+    # --- Oberer Plot: Rendite ---
+    ax1.set_facecolor("#fafafa")
+    ax1.fill_between(df["date"], df["rendite"], alpha=0.15, color="#2196F3")
+    ax1.plot(df["date"], df["rendite"], color="#2196F3", linewidth=2.2, label="Rendite", zorder=3)
+
+    rolling = df["rendite"].rolling(window=30, min_periods=1, center=True).mean()
+    ax1.plot(df["date"], rolling, color="#FF5722", linestyle="--", linewidth=1.5, alpha=0.8, label="Trend (30d)")
+
+    last = df.iloc[-1]
+    ax1.annotate(
+        f'{last["rendite"]:.2f} %',
+        xy=(last["date"], last["rendite"]),
+        xytext=(12, 12), textcoords="offset points",
+        fontsize=10, fontweight="bold", color="#2196F3",
+        arrowprops=dict(arrowstyle="->", color="#2196F3", lw=1.2),
+        zorder=4,
+    )
+
+    ax1.set_ylabel("Rendite (%)", fontsize=11, fontweight="medium", color="#333")
+    ax1.set_title("Allvest Sparvertrag \u2014 Renditeentwicklung", fontsize=14, fontweight="bold", color="#222", pad=14)
+    ax1.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper right")
+
+    # --- Unterer Plot: Wert ---
+    ax2.set_facecolor("#fafafa")
+    ax2.fill_between(df["date"], df["saldo"], alpha=0.15, color="#4CAF50")
+    ax2.plot(df["date"], df["saldo"], color="#4CAF50", linewidth=2.2, label="Wert (\u20ac)", zorder=3)
+
+    ax2.annotate(
+        f'{last["saldo"]:,.0f} \u20ac'.replace(",", "."),
+        xy=(last["date"], last["saldo"]),
+        xytext=(12, 12), textcoords="offset points",
+        fontsize=10, fontweight="bold", color="#4CAF50",
+        arrowprops=dict(arrowstyle="->", color="#4CAF50", lw=1.2),
+        zorder=4,
+    )
+
+    ax2.set_ylabel("Wert (\u20ac)", fontsize=11, fontweight="medium", color="#333")
+    ax2.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper right")
+
+    # --- Gemeinsames Styling ---
+    for ax in (ax1, ax2):
+        ax.yaxis.grid(True, color="#cccccc", linestyle="-", linewidth=0.5, alpha=0.7)
+        ax.xaxis.grid(False)
+        ax.set_axisbelow(True)
+        for spine in ["top", "right"]:
+            ax.spines[spine].set_visible(False)
+        for spine in ["left", "bottom"]:
+            ax.spines[spine].set_color("#cccccc")
+        ax.tick_params(axis="y", labelsize=9)
+
+    ax2.xaxis.set_major_locator(mdates.MonthLocator())
+    ax2.xaxis.set_major_formatter(DateFormatter("%b %Y"))
+    ax2.xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    ax2.tick_params(axis="x", which="minor", length=3, color="#bbb")
+    ax2.tick_params(axis="x", which="major", length=6, labelsize=9)
+
+    fig.autofmt_xdate(rotation=35)
+
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"Plot gespeichert: {save_path}")
+        log.info("Plot gespeichert: %s", save_path)
     else:
         plt.show()
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     raise SystemExit(main())

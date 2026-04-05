@@ -12,7 +12,7 @@ fi
 sleep 10
 
 cd /Users/tassilo/python/Sparvertrag_rendite
-.venv-browseruse/bin/python fetch_allvest.py --mail >> fetch.log 2>&1
+.venv/bin/python fetch_allvest.py --mail >> fetch.log 2>&1
 
 if [ $? -eq 0 ]; then
     echo "$TODAY" > "$LOCKFILE"

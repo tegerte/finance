@@ -1,6 +1,5 @@
 .env
 .venv/
-.venv-browseruse/
 .browser-profile/
 screenshots/
 rendite_plot.png
@@ -10,3 +9,4 @@ __pycache__/
 *.pyc
 .DS_Store
 .idea/
+CLAUDE.md

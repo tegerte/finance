@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import smtplib
@@ -25,6 +26,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, Page, TimeoutError as PwTimeout
+
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -70,7 +73,7 @@ def screenshot(page: Page, name: str, debug: bool) -> None:
         SCREENSHOT_DIR.mkdir(exist_ok=True)
         path = SCREENSHOT_DIR / f"{name}.png"
         page.screenshot(path=str(path))
-        print(f"  Screenshot: {path}")
+        log.debug("Screenshot: %s", path)
 
 
 def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
@@ -95,7 +98,7 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
         page = context.new_page()
 
         # 1) Login-Seite oeffnen
-        print("  Oeffne Login-Seite...")
+        log.info("Oeffne Login-Seite...")
         page.goto(ALLVEST_LOGIN_URL, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(3000)
         screenshot(page, "01_page", debug)
@@ -103,22 +106,22 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
         # Pruefen ob wir bereits eingeloggt sind (persistente Session)
         login_form = page.locator('input[name="usernameInput"]')
         if login_form.count() == 0:
-            print("  Bereits eingeloggt (Session aktiv).")
+            log.info("Bereits eingeloggt (Session aktiv).")
         else:
             # 2) E-Mail eingeben
-            print("  Gebe Benutzername ein...")
+            log.info("Gebe Benutzername ein...")
             email_input = page.locator('input[name="usernameInput"]')
             email_input.wait_for(state="visible", timeout=15000)
             email_input.fill(user)
 
             # 3) Passwort eingeben
-            print("  Gebe Passwort ein...")
+            log.info("Gebe Passwort ein...")
             pw_input = page.locator('input[type="password"]')
             pw_input.wait_for(state="visible", timeout=15000)
             pw_input.fill(password)
 
             # 4) Login-Button klicken
-            print("  Klicke Anmelden...")
+            log.info("Klicke Anmelden...")
             login_btn = page.get_by_role("button", name="Anmelden")
             login_btn.click()
             screenshot(page, "02_after_login", debug)
@@ -127,35 +130,35 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
             page.wait_for_timeout(3000)
             if "mail-code" in page.url or "unbekannt" in page.inner_text("body").lower():
                 screenshot(page, "03_2fa_page", debug)
-                print("\n  2FA-Verifizierung erforderlich!")
-                print("  Allvest hat einen Code an deine E-Mail geschickt.")
-                print("  Bitte gib den Code im Browser-Fenster ein und klicke 'Weiter'.")
-                print("  Warte auf Weiterleitung zum Dashboard...")
+                log.warning("2FA-Verifizierung erforderlich!")
+                log.info("Allvest hat einen Code an deine E-Mail geschickt.")
+                log.info("Bitte gib den Code im Browser-Fenster ein und klicke 'Weiter'.")
+                log.info("Warte auf Weiterleitung zum Dashboard...")
                 try:
                     page.wait_for_url("**/allvest.de/**", timeout=300000)
                 except PwTimeout:
-                    print(f"  Timeout - aktuelle URL: {page.url}")
+                    log.warning("Timeout - aktuelle URL: %s", page.url)
                     if "mail-code" in page.url:
                         context.close()
                         raise RuntimeError("2FA-Code wurde nicht eingegeben (Timeout).")
             else:
-                print("  Warte auf Dashboard...")
+                log.info("Warte auf Dashboard...")
                 try:
                     page.wait_for_url("**/allvest.de/**", timeout=30000)
                 except PwTimeout:
-                    print(f"  Aktuelle URL: {page.url}")
+                    log.warning("Aktuelle URL: %s", page.url)
 
         # Warte auf allvest.de Dashboard
-        print("  Warte auf Dashboard...")
+        log.info("Warte auf Dashboard...")
         try:
             page.wait_for_url("**/www.allvest.de/**", timeout=30000)
         except PwTimeout:
-            print(f"  URL nach Timeout: {page.url}")
+            log.warning("URL nach Timeout: %s", page.url)
         page.wait_for_load_state("networkidle", timeout=30000)
         screenshot(page, "04_dashboard", debug)
 
         # 6) Kurswert suchen
-        print("  Suche Kurswert...")
+        log.info("Suche Kurswert...")
         # Warte auf dynamisch geladene Inhalte
         page.wait_for_timeout(8000)
         screenshot(page, "06_dashboard_loaded", debug)
@@ -166,7 +169,7 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
         if debug:
             text_path = SCREENSHOT_DIR / "page_text.txt"
             text_path.write_text(page_text, encoding="utf-8")
-            print(f"  Seitentext gespeichert: {text_path}")
+            log.debug("Seitentext gespeichert: %s", text_path)
 
         value = extract_value_from_text(page_text)
 
@@ -174,9 +177,9 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
             screenshot(page, "07_value_not_found", True)
             # Im Debug-Modus: Browser offen lassen
             if debug:
-                print("\n  Kurswert nicht automatisch gefunden.")
-                print("  Browser bleibt offen — schau dir die Seite an.")
-                print("  Seitentext wurde gespeichert in screenshots/page_text.txt")
+                log.error("Kurswert nicht automatisch gefunden.")
+                log.info("Browser bleibt offen — schau dir die Seite an.")
+                log.info("Seitentext wurde gespeichert in screenshots/page_text.txt")
                 input("  Druecke Enter zum Beenden...")
             context.close()
             raise RuntimeError(
@@ -203,7 +206,7 @@ def update_cashflows(value: float, cashflows_path: Path = CASHFLOWS_FILE) -> Non
     cashflows_path.write_text(
         json.dumps(data, indent=4, ensure_ascii=False), encoding="utf-8"
     )
-    print(f"cashflows.json aktualisiert: {today} -> {value:.2f} EUR")
+    log.info("cashflows.json aktualisiert: %s -> %.2f EUR", today, value)
 
 
 PLOT_FILE = Path(__file__).parent / "rendite_plot.png"
@@ -221,7 +224,7 @@ def run_main_py() -> tuple[int, str]:
         text=True,
     )
     output = result.stdout + result.stderr
-    print(output)
+    log.info("main.py Ausgabe:\n%s", output)
     return result.returncode, output
 
 
@@ -328,7 +331,7 @@ def send_email(subject: str, html_body: str, attachment: Path | None = None) -> 
         server.login(smtp_user, smtp_password)
         server.send_message(msg)
 
-    print(f"E-Mail gesendet an {smtp_user}")
+    log.info("E-Mail gesendet an %s", smtp_user)
 
 
 def main() -> int:
@@ -350,19 +353,19 @@ def main() -> int:
     args = parser.parse_args()
 
     headless = not args.debug
-    print("Hole aktuellen Allvest-Kurswert...")
+    log.info("Hole aktuellen Allvest-Kurswert...")
     value = fetch_kurswert(headless=headless, debug=args.debug)
-    print(f"\nAktueller Kurswert: {value:.2f} EUR")
+    log.info("Aktueller Kurswert: %.2f EUR", value)
 
     if args.dry_run:
-        print("(Dry-run: nichts gespeichert)")
+        log.info("Dry-run: nichts gespeichert")
         return 0
 
     update_cashflows(value)
 
     rendite_output = ""
     if not args.skip_rendite:
-        print("\nBerechne Rendite...")
+        log.info("Berechne Rendite...")
         rc, rendite_output = run_main_py()
 
     if args.mail:
@@ -383,4 +386,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # --debug wird vorab geprüft, um Log-Level vor main() zu setzen
+    level = logging.DEBUG if "--debug" in sys.argv else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     raise SystemExit(main())
