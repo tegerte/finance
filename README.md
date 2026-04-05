@@ -114,15 +114,57 @@ Falls die Session abgelaufen ist:
 ```
 Den E-Mail-Code im sich öffnenden Browser eingeben, danach läuft alles wieder automatisch.
 
-### Automatischer täglicher Lauf
+### Automatischer täglicher Lauf (macOS launchd)
 
-Ein launchd-Agent (`~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist`) startet das Skript beim Login. Das Wrapper-Skript `fetch_daily.sh` stellt sicher, dass es pro Tag nur einmal läuft.
+Ein macOS **LaunchAgent** sorgt dafür, dass das Skript automatisch einmal pro Tag läuft. Der Agent wird bei jedem Login gestartet und zusätzlich täglich um 9:00 Uhr ausgeführt (auch nach dem Aufwachen aus dem Schlafmodus). Das Wrapper-Skript `fetch_daily.sh` verhindert über ein Lockfile (`/tmp/allvest_last_run`) doppelte Ausführungen am selben Tag.
+
+#### Einrichtung
+
+1. **Plist-Datei kopieren** (falls noch nicht vorhanden):
+   ```bash
+   cp de.tassilo.allvest-fetch.plist ~/Library/LaunchAgents/
+   ```
+
+2. **Agent bei launchd registrieren:**
+   ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
+   ```
+
+3. **Prüfen, ob der Agent geladen ist:**
+   ```bash
+   launchctl list | grep allvest
+   ```
+   Ausgabe sollte eine Zeile mit `de.tassilo.allvest-fetch` zeigen. Die erste Spalte ist der Exit-Code des letzten Laufs (`0` = erfolgreich, `-` = noch nicht gelaufen).
+
+#### Agent manuell starten / stoppen
 
 ```bash
-# Agent manuell laden/entladen:
-launchctl load ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
-launchctl unload ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
+# Sofort ausführen (ohne auf den Zeitplan zu warten):
+launchctl kickstart gui/$(id -u)/de.tassilo.allvest-fetch
+
+# Agent entfernen (stoppt den Zeitplan):
+launchctl bootout gui/$(id -u)/de.tassilo.allvest-fetch
+
+# Agent neu laden (z. B. nach Änderung der plist):
+launchctl bootout gui/$(id -u)/de.tassilo.allvest-fetch
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.tassilo.allvest-fetch.plist
 ```
+
+#### Logs prüfen
+
+```bash
+# Ausgabe des Skripts:
+tail -f fetch.log
+
+# launchd-spezifische Ausgabe (normalerweise leer):
+cat launchd.log
+```
+
+#### Hinweise
+
+- **Sleep vs. Login:** `RunAtLoad` triggert nur bei einem echten Login (Neustart, Abmeldung/Anmeldung). Für den täglichen Lauf beim Aufwachen aus dem Schlafmodus sorgt `StartCalendarInterval` — macOS holt verpasste Ausführungen nach.
+- **Uhrzeit ändern:** In der Plist die Werte unter `StartCalendarInterval` → `Hour`/`Minute` anpassen und den Agent neu laden.
+- Die veralteten Befehle `launchctl load`/`unload` funktionieren noch, Apple empfiehlt aber `bootstrap`/`bootout`.
 
 ### Projektstruktur
 
