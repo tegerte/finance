@@ -230,6 +230,10 @@ def run_main_py() -> tuple[int, str]:
 
 def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, plot_path: Path | None) -> str:
     """Build a nice HTML email body."""
+    # Kurswert deutsch formatieren (Komma als Dezimaltrennzeichen, kein Tausendertrenner)
+    value_str = f"{value:.2f}".replace(".", ",")
+    # Rendite deutsch formatieren
+    rendite_str = rendite_str.replace(".", ",")
     # Embed plot as inline image if available
     plot_html = ""
     if plot_path and plot_path.exists():
@@ -268,7 +272,7 @@ def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, 
               <tr>
                 <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
                   <p style="margin:0 0 4px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;">Kurswert</p>
-                  <p style="margin:0;font-size:22px;font-weight:600;color:#222;">{value:,.2f} &euro;</p>
+                  <p style="margin:0;font-size:22px;font-weight:600;color:#222;">{value_str} &euro;</p>
                 </td>
                 <td width="8"></td>
                 <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
@@ -372,7 +376,7 @@ def main() -> int:
         today = date.today().strftime("%d.%m.%Y")
         # Rendite aus Output parsen
         rendite_match = re.search(r"(\d+\.\d+)%", rendite_output)
-        rendite_str = f"{rendite_match.group(1)}%" if rendite_match else "n/a"
+        rendite_str = f"{float(rendite_match.group(1)):.2f}%" if rendite_match else "n/a"
         # Laufzeit parsen
         laufzeit_match = re.search(r"([\d]+ year.*)", rendite_output)
         laufzeit = laufzeit_match.group(1).strip() if laufzeit_match else ""
