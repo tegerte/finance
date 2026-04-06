@@ -352,7 +352,7 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
 
     ax1.set_ylabel("Rendite (%)", fontsize=11, fontweight="medium", color="#333")
     ax1.set_title("Allvest Sparvertrag \u2014 Renditeentwicklung", fontsize=14, fontweight="bold", color="#222", pad=14)
-    ax1.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper right")
+    ax1.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper left")
 
     # --- Unterer Plot: Wert ---
     ax2.set_facecolor("#fafafa")

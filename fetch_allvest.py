@@ -244,11 +244,11 @@ def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, 
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f4f7;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:24px 0;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <table width="1000" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
         <!-- Header -->
         <tr>
           <td style="background:linear-gradient(135deg,#003781,#0070c0);padding:28px 32px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:600;">Allvest Active 80</h1>
+            <h1 style="margin:0;color:#ffffff;font-size:32px;font-weight:600;">Allvest Active 80</h1>
             <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Tagesbericht {today}</p>
           </td>
         </tr>
@@ -272,7 +272,7 @@ def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, 
               <tr>
                 <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
                   <p style="margin:0 0 4px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;">Kurswert</p>
-                  <p style="margin:0;font-size:22px;font-weight:600;color:#222;">{value_str} &euro;</p>
+                  <p style="margin:0;font-size:30px;font-weight:600;color:#222;">{value_str} &euro;</p>
                 </td>
                 <td width="8"></td>
                 <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
