@@ -369,7 +369,7 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
     )
 
     ax2.set_ylabel("Wert (\u20ac)", fontsize=11, fontweight="medium", color="#333")
-    ax2.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper right")
+    ax2.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper left")
 
     # --- Gemeinsames Styling ---
     for ax in (ax1, ax2):
