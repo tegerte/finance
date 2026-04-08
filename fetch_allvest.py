@@ -309,8 +309,8 @@ def send_email(subject: str, html_body: str, attachment: Path | None = None) -> 
     from email.mime.image import MIMEImage
     from email.utils import formataddr
 
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.1und1.de")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_host = os.environ.get("SMTP_HOST", "mail.manitu.de")
+    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
     smtp_user = os.environ.get("SMTP_USER")
     smtp_password = os.environ.get("SMTP_PASSWORD")
 
@@ -330,8 +330,13 @@ def send_email(subject: str, html_body: str, attachment: Path | None = None) -> 
         img.add_header("Content-Disposition", "inline", filename=attachment.name)
         msg.attach(img)
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
+    if smtp_port == 465:
+        smtp_cls = smtplib.SMTP_SSL
+    else:
+        smtp_cls = smtplib.SMTP
+    with smtp_cls(smtp_host, smtp_port, timeout=30) as server:
+        if smtp_port != 465:
+            server.starttls()
         server.login(smtp_user, smtp_password)
         server.send_message(msg)
 

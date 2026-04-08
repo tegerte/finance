@@ -231,15 +231,15 @@ def read_json(filename, supress_new_prompt=False) -> tuple[Any, Any, bool] | tup
         log.error('File %s konnte nicht gefunden werden!', filename)
         return None, None, False
 
-def read_csv(in_file: Path) -> pd.DataFrame:
+def read_rendite(in_file: Path) -> pd.DataFrame:
     try:
-        df = pd.read_csv(in_file)
+        df = pd.read_feather(in_file)
     except FileNotFoundError:
         df = pd.DataFrame()
     return df
 
-def write_csv(out_file:Path, df: DataFrame) ->int:
-    df.to_csv(out_file, index=False)
+def write_rendite(out_file: Path, df: DataFrame) -> int:
+    df.reset_index(drop=True).to_feather(out_file)
 
 
 
@@ -248,8 +248,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Berechne XIRR aus einer JSON-Datei mit Cashflows.")
     parser.add_argument("--cashflows", "-c", type=Path, default=Path("cashflows.json"),
                         help="Pfad zur JSON-Datei mit Cashflows (default: cashflows.json)")
-    parser.add_argument("--rendite", "-r", type=Path, default=Path("rendite.csv"),
-                        help="Pfad zur CSV-Datei mit den bisherigen Rendite-ergebnissen (default: rendite.csv)")
+    parser.add_argument("--rendite", "-r", type=Path, default=Path("rendite.feather"),
+                        help="Pfad zur Feather-Datei mit den bisherigen Rendite-Ergebnissen (default: rendite.feather)")
 
     parser.add_argument("--init", action="store_true", help="Erstelle eine Beispiel-JSON-Datei und beende das Programm.")
     parser.add_argument("--guess", type=float, default=0.05,
@@ -276,7 +276,7 @@ def main() -> int:
         log.error("Datei %s nicht gefunden. Erzeuge eine Beispiel-Datei mit --init %s", path_cfs, path_cfs)
         return 2
 
-    previous_results = read_csv(path_rendite)
+    previous_results = read_rendite(path_rendite)
     if args.standalone:
         curr_saldo= input('Aktueller Kontostand?')
         data,_,_ = read_json(path_cfs, supress_new_prompt=True)
@@ -313,7 +313,7 @@ def main() -> int:
         new_row = pd.DataFrame({'date': [current_data['date']],'saldo': [current_data['amount']],'rendite': [irr * 100]})
         results = pd.concat([previous_results, new_row], ignore_index=True)
         # noch prüfen ob für den heutigen Tag ein Eintarag vorhanden ist
-        write_csv(path_rendite, results)
+        write_rendite(path_rendite, results)
     else:
         results = previous_results
     plot_it(results, save_path=args.save_plot)
@@ -328,8 +328,11 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
     df["date"] = pd.to_datetime(df["date"])
 
     plt.style.use("seaborn-v0_8-whitegrid")
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True,
-                                    gridspec_kw={"height_ratios": [3, 2], "hspace": 0.08})
+    fig = plt.figure(figsize=(11, 11))
+    gs = fig.add_gridspec(3, 1, height_ratios=[3, 2, 2], hspace=0.35)
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1], sharex=ax1)
+    ax3 = fig.add_subplot(gs[2])
     fig.patch.set_facecolor("#fafafa")
 
     # --- Oberer Plot: Rendite ---
@@ -371,8 +374,33 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
     ax2.set_ylabel("Wert (\u20ac)", fontsize=11, fontweight="medium", color="#333")
     ax2.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper left")
 
+    # --- Dritter Plot: Wert der letzten 7 Tage ---
+    df7 = df.tail(7)
+    ax3.set_facecolor("#fafafa")
+    y_min, y_max = df7["saldo"].min(), df7["saldo"].max()
+    y_pad = max((y_max - y_min) * 0.2, 1.0)
+    ax3.set_ylim(y_min - y_pad, y_max + y_pad)
+    ax3.fill_between(df7["date"], df7["saldo"], y_min - y_pad, alpha=0.15, color="#4CAF50")
+    ax3.plot(df7["date"], df7["saldo"], color="#4CAF50", linewidth=2.2,
+             marker="o", markersize=5, label="Wert (\u20ac, 7 Tage)", zorder=3)
+
+    last7 = df7.iloc[-1]
+    ax3.annotate(
+        f'{last7["saldo"]:,.0f} \u20ac'.replace(",", "."),
+        xy=(last7["date"], last7["saldo"]),
+        xytext=(12, 12), textcoords="offset points",
+        fontsize=10, fontweight="bold", color="#4CAF50",
+        arrowprops=dict(arrowstyle="->", color="#4CAF50", lw=1.2),
+        zorder=4,
+    )
+
+    ax3.set_ylabel("Wert (\u20ac)", fontsize=11, fontweight="medium", color="#333")
+    ax3.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper left")
+    ax3.xaxis.set_major_locator(mdates.DayLocator())
+    ax3.xaxis.set_major_formatter(DateFormatter("%d.%m."))
+
     # --- Gemeinsames Styling ---
-    for ax in (ax1, ax2):
+    for ax in (ax1, ax2, ax3):
         ax.yaxis.grid(True, color="#cccccc", linestyle="-", linewidth=0.5, alpha=0.7)
         ax.xaxis.grid(False)
         ax.set_axisbelow(True)

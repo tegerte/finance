@@ -173,7 +173,7 @@ main.py                 # XIRR-Berechnung + Plot
 fetch_allvest.py        # Automatischer Kurswert-Abruf + Mail
 fetch_daily.sh          # Wrapper für täglichen Lauf (einmal pro Tag)
 cashflows.json          # Cashflow-Daten (Ein-/Auszahlungen + aktueller Wert)
-rendite.csv             # Historische Rendite-Ergebnisse
+rendite.feather         # Historische Rendite-Ergebnisse (Feather/Arrow)
 rendite_plot.png        # Letzter gespeicherter Plot
 .env                    # Zugangsdaten (nicht committen!)
 .env.example            # Vorlage für .env
