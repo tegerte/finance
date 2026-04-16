@@ -11,7 +11,7 @@ fi
 # Warte kurz bis Netzwerk verfügbar ist
 sleep 10
 
-cd /Users/tassilo/python/Sparvertrag_rendite
+cd /Users/tassilo/programming/python/Sparvertrag_rendite
 .venv/bin/python fetch_allvest.py --mail >> fetch.log 2>&1
 
 if [ $? -eq 0 ]; then
