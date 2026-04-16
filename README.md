@@ -169,7 +169,7 @@ cat launchd.log
 ### Projektstruktur
 
 ```
-main.py                 # XIRR-Berechnung + Plot
+main.py                 # XIRR-Berechnung + Plot (3 Subplots, 7-Tage mit Tagesveränderung)
 fetch_allvest.py        # Automatischer Kurswert-Abruf + Mail
 fetch_daily.sh          # Wrapper für täglichen Lauf (einmal pro Tag)
 cashflows.json          # Cashflow-Daten (Ein-/Auszahlungen + aktueller Wert)

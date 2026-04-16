@@ -375,7 +375,7 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
     ax2.legend(frameon=True, fancybox=True, shadow=False, edgecolor="#ddd", fontsize=9, loc="upper left")
 
     # --- Dritter Plot: Wert der letzten 7 Tage ---
-    df7 = df.tail(7)
+    df7 = df.drop_duplicates(subset="date", keep="last").tail(7)
     ax3.set_facecolor("#fafafa")
     y_min, y_max = df7["saldo"].min(), df7["saldo"].max()
     y_pad = max((y_max - y_min) * 0.2, 1.0)
@@ -383,6 +383,24 @@ def plot_it(results: DataFrame, save_path: Path | None = None):
     ax3.fill_between(df7["date"], df7["saldo"], y_min - y_pad, alpha=0.15, color="#4CAF50")
     ax3.plot(df7["date"], df7["saldo"], color="#4CAF50", linewidth=2.2,
              marker="o", markersize=5, label="Wert (\u20ac, 7 Tage)", zorder=3)
+
+    # Tägliche Veränderung als Annotation (zwischen den Datenpunkten)
+    saldo_diff = df7["saldo"].diff()
+    for idx in range(1, len(df7)):
+        prev_row = df7.iloc[idx - 1]
+        row = df7.iloc[idx]
+        diff = saldo_diff.iloc[idx]
+        sign = "+" if diff >= 0 else ""
+        color = "#2196F3" if diff >= 0 else "#F44336"
+        mid_date = prev_row["date"] + (row["date"] - prev_row["date"]) / 2
+        mid_saldo = (prev_row["saldo"] + row["saldo"]) / 2
+        ax3.annotate(
+            f'{sign}{diff:,.0f} \u20ac'.replace(",", "."),
+            xy=(mid_date, mid_saldo),
+            xytext=(0, -20), textcoords="offset points",
+            fontsize=11, fontweight="bold", color=color,
+            ha="center", zorder=5,
+        )
 
     last7 = df7.iloc[-1]
     ax3.annotate(
