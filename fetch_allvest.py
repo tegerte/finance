@@ -102,15 +102,27 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
         page.goto(ALLVEST_LOGIN_URL, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(3000)
         screenshot(page, "01_page", debug)
+        log.debug("Aktuelle URL: %s", page.url)
 
         # Pruefen ob wir bereits eingeloggt sind (persistente Session)
-        login_form = page.locator('input[name="usernameInput"]')
-        if login_form.count() == 0:
+        # Robuste Erkennung: Login-Seite hat immer ein Passwort-Feld
+        password_field = page.locator('input[type="password"]')
+        username_field = page.locator('input[name="usernameInput"], input[name="username"], input[name="callbacks_0"]')
+        has_login_form = password_field.count() > 0
+        log.info("Login-Formular erkannt: %s (Passwort-Feld: %d, Username-Feld: %d)",
+                 has_login_form, password_field.count(), username_field.count())
+        if not has_login_form:
             log.info("Bereits eingeloggt (Session aktiv).")
         else:
-            # 2) E-Mail eingeben
+            # 2) Benutzername eingeben
             log.info("Gebe Benutzername ein...")
-            email_input = page.locator('input[name="usernameInput"]')
+            # Falls bekannter Selektor nicht matcht, Fallback auf erstes Text-Input
+            if username_field.count() > 0:
+                email_input = username_field.first
+            else:
+                # Fallback: erstes sichtbares Text-Input vor dem Passwort-Feld
+                email_input = page.locator('input[type="text"]').first
+                log.info("Nutze Fallback-Selektor fuer Benutzername-Feld")
             email_input.wait_for(state="visible", timeout=15000)
             email_input.fill(user)
 
