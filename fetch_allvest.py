@@ -89,11 +89,18 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
     with sync_playwright() as p:
         # Persistenter Browser-Kontext: Cookies/Sessions bleiben erhalten
         BROWSER_PROFILE_DIR.mkdir(exist_ok=True)
+        # Fester User-Agent damit headless und headed als dasselbe Geraet erkannt werden
+        CHROME_UA = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36"
+        )
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(BROWSER_PROFILE_DIR),
             headless=headless,
             viewport={"width": 1280, "height": 900},
             locale="de-DE",
+            user_agent=CHROME_UA,
         )
         page = context.new_page()
 
