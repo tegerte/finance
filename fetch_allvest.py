@@ -247,12 +247,15 @@ def run_main_py() -> tuple[int, str]:
     return result.returncode, output
 
 
-def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, plot_path: Path | None) -> str:
+def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, gewinn: float, plot_path: Path | None) -> str:
     """Build a nice HTML email body."""
     # Kurswert deutsch formatieren (Komma als Dezimaltrennzeichen, kein Tausendertrenner)
     value_str = f"{value:.2f}".replace(".", ",")
     # Rendite deutsch formatieren
     rendite_str = rendite_str.replace(".", ",")
+    # Gewinn formatieren (mit Vorzeichen + Farbe)
+    gewinn_str = f"{gewinn:+.2f}".replace(".", ",") + " €"
+    gewinn_color = "#1a8754" if gewinn >= 0 else "#c0392b"
     # Embed plot as inline image if available
     plot_html = ""
     if plot_path and plot_path.exists():
@@ -289,14 +292,19 @@ def build_html_email(today: str, value: float, rendite_str: str, laufzeit: str, 
           <td style="padding:0 32px 24px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
+                <td width="33%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
                   <p style="margin:0 0 4px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;">Kurswert</p>
-                  <p style="margin:0;font-size:30px;font-weight:600;color:#222;">{value_str} &euro;</p>
+                  <p style="margin:0;font-size:26px;font-weight:600;color:#222;">{value_str} &euro;</p>
                 </td>
                 <td width="8"></td>
-                <td width="50%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
+                <td width="33%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
+                  <p style="margin:0 0 4px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;">Gewinn</p>
+                  <p style="margin:0;font-size:26px;font-weight:600;color:{gewinn_color};">{gewinn_str}</p>
+                </td>
+                <td width="8"></td>
+                <td width="33%" style="background:#fafafa;border-radius:10px;padding:18px;text-align:center;">
                   <p style="margin:0 0 4px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;">Laufzeit</p>
-                  <p style="margin:0;font-size:16px;font-weight:600;color:#222;">{laufzeit}</p>
+                  <p style="margin:0;font-size:15px;font-weight:600;color:#222;">{laufzeit}</p>
                 </td>
               </tr>
             </table>
@@ -405,8 +413,11 @@ def main() -> int:
         laufzeit_match = re.search(r"([\d]+ year.*)", rendite_output)
         laufzeit = laufzeit_match.group(1).strip() if laufzeit_match else ""
 
+        cashflows = json.loads(CASHFLOWS_FILE.read_text(encoding="utf-8"))
+        gewinn = sum(cf["amount"] for cf in cashflows)
+
         subject = f"Allvest Report {today}"
-        html = build_html_email(today, value, rendite_str, laufzeit, PLOT_FILE)
+        html = build_html_email(today, value, rendite_str, laufzeit, gewinn, PLOT_FILE)
         plot = PLOT_FILE if PLOT_FILE.exists() else None
         send_email(subject, html, attachment=plot)
 
