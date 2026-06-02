@@ -124,6 +124,8 @@ Die HTML-Mail enthält drei Kacheln: aktueller **Kurswert**, **Gewinn** (Summe a
 
 Das Skript nutzt ein **persistentes Browser-Profil** (`.browser-profile/`), um Cookies und Sessions zu speichern. Beim ersten Lauf oder nach Session-Ablauf verlangt Allvest eine 2FA-Verifizierung per E-Mail-Code. In dem Fall mit `--debug` starten, den Code im Browser-Fenster eingeben — danach läuft es wieder automatisch.
 
+**Login-Flow:** Einstieg über `https://www.allvest.de/to-cockpit` (frischer OAuth-Flow, kein hardcodiertes `state`/`nonce`). Allianz nutzt seit Juni 2026 einen **Multi-Step-Login** (erst Benutzername → Weiter, dann Passwort → Weiter); das Skript unterstützt beide Flows (auch das alte One-Step-Formular). Werden Error-Pages erkannt (URL-Pfad `/error` oder Text „Anmeldung wurde aus technischen Gründen abgebrochen"), bricht der Lauf sofort mit RuntimeError ab — keine Werte landen mehr in `cashflows.json`. Zusätzliche Sanity-Schranke: Werte < 10.000 EUR werden ignoriert, um Falschtreffer auf Telefonnummern/Error-IDs zu verhindern.
+
 Falls die Session abgelaufen ist:
 
 ```bash

@@ -24,6 +24,8 @@ from datetime import date
 from email.message import EmailMessage
 from pathlib import Path
 
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, Page, TimeoutError as PwTimeout
 
@@ -31,10 +33,11 @@ log = logging.getLogger(__name__)
 
 load_dotenv()
 
-ALLVEST_LOGIN_URL = (
-    "https://cim.allianz.de/ui/login/de/allianz/start?goto=https:%2F%2Fcim.allianz.de:443%2Fauth%2Foauth2%2Frealms%2Froot%2Frealms%2Feu1%2Fauthorize%3Fclient_id%3D471tqy1trp3cdba196w50ot74k38sel9ud45lyyg%26state%3Dcockpit,%25252Fcockpit%25252Fdetails%25252Fbff-contract-899f9940-4c43-48fd-93ec-9"
-    "abf8da7c767,97ced729-d1da-4ebc-88c1-d7635f17f404%26scope%3Dopenid%2520profile%2520abs_basic%2520az_basic%26redirect_uri%3Dhttps:%2F%2Fwww.allvest.de%2Fgw%2Fsilentlogin%26response_type%3Dcode%26nonce%3DsMmocW3plNUGzTzf&realm=%2Feu1"
-)
+# Einstieg ueber die Allvest-Startseite -- generiert bei jedem Aufruf einen
+# frischen OAuth-Flow mit gueltigem state/nonce/contract-ID. Die frueher
+# hardcodierte cim.allianz.de-Direkt-URL ist seit der Multi-Step-Umstellung
+# (Anfang Juni 2026) nicht mehr nutzbar.
+ALLVEST_LOGIN_URL = "https://www.allvest.de/to-cockpit"
 
 CASHFLOWS_FILE = Path(__file__).parent / "cashflows.json"
 SCREENSHOT_DIR = Path(__file__).parent / "screenshots"
@@ -53,8 +56,13 @@ def parse_german_number(text: str) -> float | None:
         return None
 
 
-def extract_value_from_text(text: str) -> float | None:
-    """Try to extract a monetary value from page text."""
+def extract_value_from_text(text: str, min_value: float = 10000.0) -> float | None:
+    """Try to extract a monetary value from page text.
+
+    `min_value` schuetzt vor Falschtreffern auf Fehlerseiten (Telefonnummern,
+    Datums-Bruchstuecken in URLs etc.). Stand der Sparvertrag liegt ueber 22000
+    EUR, ein Wert <10000 EUR ist daher sehr verdaechtig.
+    """
     patterns = [
         r"(\d{1,3}(?:\.\d{3})*,\d{2})",   # 15.310,42
         r"(\d{4,},\d{2})",                  # 15310,42
@@ -62,9 +70,33 @@ def extract_value_from_text(text: str) -> float | None:
     for pattern in patterns:
         for match in re.finditer(pattern, text):
             value = parse_german_number(match.group(1))
-            if value and value > 100:
+            if value and value >= min_value:
                 return value
     return None
+
+
+ERROR_TEXT_MARKERS = (
+    "Anmeldung wurde aus technischen Gründen abgebrochen",
+    "Anmeldung wurde aus technischen Gruenden abgebrochen",
+)
+
+
+def is_allianz_error_page(url: str, body_text: str) -> bool:
+    """True, wenn wir auf der Allianz-Login-Errorpage gelandet sind.
+
+    URL muss path-basiert geprueft werden, sonst matchen wir versehentlich
+    den 'cockpit'-Substring im OAuth-state-Parameter.
+    """
+    path = urlparse(url).path.lower()
+    if path.endswith("/error") or "/error/" in path:
+        return True
+    return any(m in body_text for m in ERROR_TEXT_MARKERS)
+
+
+def is_cockpit_page(url: str) -> bool:
+    """True, wenn wir auf dem Allvest-Cockpit (eingeloggt) sind."""
+    u = urlparse(url)
+    return u.netloc == "www.allvest.de" and u.path.startswith("/cockpit")
 
 
 def screenshot(page: Page, name: str, debug: bool) -> None:
@@ -111,39 +143,74 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
         screenshot(page, "01_page", debug)
         log.debug("Aktuelle URL: %s", page.url)
 
-        # Pruefen ob wir bereits eingeloggt sind (persistente Session)
-        # Robuste Erkennung: Login-Seite hat immer ein Passwort-Feld
-        password_field = page.locator('input[type="password"]')
-        username_field = page.locator('input[name="usernameInput"], input[name="username"], input[name="callbacks_0"]')
-        has_login_form = password_field.count() > 0
-        log.info("Login-Formular erkannt: %s (Passwort-Feld: %d, Username-Feld: %d)",
-                 has_login_form, password_field.count(), username_field.count())
-        if not has_login_form:
-            log.info("Bereits eingeloggt (Session aktiv).")
+        # Fail fast wenn Allianz uns auf die Error-Page geschickt hat
+        if is_allianz_error_page(page.url, page.inner_text("body")):
+            screenshot(page, "01_error_page", True)
+            context.close()
+            raise RuntimeError(
+                f"Allianz-Login-Errorpage (URL: {page.url}). "
+                "Vermutlich serverseitiges Problem oder geaenderter Login-Flow."
+            )
+
+        # Pruefen ob wir bereits eingeloggt sind: nur wenn URL wirklich Cockpit ist.
+        # Frueher genuegte "kein Passwort-Feld da" -- das war ein Fehlschluss,
+        # weil auch Error-Pages keins haben.
+        if is_cockpit_page(page.url):
+            log.info("Bereits eingeloggt (Session aktiv, URL: %s).", page.url)
         else:
+            password_field = page.locator('input[type="password"]')
+            username_field = page.locator(
+                'input[name="usernameInput"], input[name="username"], input[name="callbacks_0"], input[name="IDToken3"]'
+            )
+            log.info(
+                "Login-Formular: Passwort-Feld: %d, Username-Feld: %d, URL: %s",
+                password_field.count(), username_field.count(), page.url,
+            )
+
             # 2) Benutzername eingeben
             log.info("Gebe Benutzername ein...")
-            # Falls bekannter Selektor nicht matcht, Fallback auf erstes Text-Input
             if username_field.count() > 0:
                 email_input = username_field.first
             else:
-                # Fallback: erstes sichtbares Text-Input vor dem Passwort-Feld
                 email_input = page.locator('input[type="text"]').first
                 log.info("Nutze Fallback-Selektor fuer Benutzername-Feld")
             email_input.wait_for(state="visible", timeout=15000)
             email_input.fill(user)
 
-            # 3) Passwort eingeben
+            # 3) Passwort eingeben -- entweder gleich (One-Step) oder nach
+            # "Weiter"-Klick (Multi-Step). Allianz hat Anfang Juni 2026 auf
+            # Multi-Step umgestellt.
+            if password_field.count() == 0:
+                log.info("Multi-Step-Login: klicke 'Weiter' nach Username...")
+                weiter_btn = page.locator(
+                    'button:has-text("Weiter"), button:has-text("Anmelden"), button[type="submit"]'
+                ).first
+                weiter_btn.click()
+                screenshot(page, "02_after_username", debug)
+                # Auf Passwort-Feld warten
+                page.wait_for_selector('input[type="password"]', state="visible", timeout=15000)
+                # Falls Allianz danach wieder Error-Page zeigt:
+                if is_allianz_error_page(page.url, page.inner_text("body")):
+                    screenshot(page, "02_error_after_username", True)
+                    context.close()
+                    raise RuntimeError(
+                        f"Allianz-Errorpage nach Username-Eingabe (URL: {page.url})."
+                    )
+
             log.info("Gebe Passwort ein...")
             pw_input = page.locator('input[type="password"]')
             pw_input.wait_for(state="visible", timeout=15000)
             pw_input.fill(password)
 
-            # 4) Login-Button klicken
-            log.info("Klicke Anmelden...")
-            login_btn = page.get_by_role("button", name="Anmelden")
+            # 4) Login-Button klicken -- im neuen Multi-Step-Flow heisst auch
+            # der finale Bestaetigungs-Button "Weiter" (nicht "Anmelden").
+            log.info("Klicke Anmelden/Weiter...")
+            login_btn = page.locator(
+                'button:has-text("Weiter"), button:has-text("Anmelden"), button[type="submit"]'
+            ).first
+            login_btn.wait_for(state="visible", timeout=15000)
             login_btn.click()
-            screenshot(page, "02_after_login", debug)
+            screenshot(page, "03_after_login", debug)
 
             # 5) Pruefen ob 2FA-Seite erscheint (E-Mail-Code)
             page.wait_for_timeout(3000)
@@ -189,6 +256,15 @@ def fetch_kurswert(headless: bool = True, debug: bool = False) -> float:
             text_path = SCREENSHOT_DIR / "page_text.txt"
             text_path.write_text(page_text, encoding="utf-8")
             log.debug("Seitentext gespeichert: %s", text_path)
+
+        # Sicherheitsnetz: keine Werte aus Error-Pages extrahieren
+        if is_allianz_error_page(page.url, page_text):
+            screenshot(page, "07_error_before_extract", True)
+            context.close()
+            raise RuntimeError(
+                f"Erreichte Seite ist Allianz-Errorpage (URL: {page.url}). "
+                "Login vermutlich fehlgeschlagen."
+            )
 
         value = extract_value_from_text(page_text)
 
